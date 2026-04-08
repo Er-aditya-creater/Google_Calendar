@@ -101,7 +101,7 @@ Always be concise, helpful, and professional. Never expose raw JSON to the user.
 def create_scheduler_agent():
     """Return a callable run_agent(user_input) -> str."""
 
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
+    llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite-preview", temperature=0)
     llm_with_tools = llm.bind_tools(ALL_TOOLS)
 
     def run_agent(user_input: str) -> str:
