@@ -93,8 +93,8 @@ check calendar → detect conflict → analyse patterns → find free slots → 
 ### Step 1 — Clone the repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
-cd YOUR_REPO_NAME
+git clone https://github.com/Er-aditya-creater/Google_Calendar
+cd Google_Calendar
 ```
 
 ### Step 2 — Create a Python virtual environment
