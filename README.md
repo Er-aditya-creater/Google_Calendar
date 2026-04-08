@@ -1,106 +1,207 @@
 # AI Meeting Scheduler — LangChain + Google Calendar
 
-An AI agent that understands natural language scheduling requests, checks your
-real Google Calendar for conflicts, creates events, and suggests smart
-alternatives when a slot is blocked.
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![LangChain](https://img.shields.io/badge/LangChain-latest-green)
+![Gemini](https://img.shields.io/badge/Gemini-1.5--flash-orange)
+![License](https://img.shields.io/badge/License-MIT-yellow)
+
+An AI-powered meeting scheduler that understands **natural language requests**, checks your real **Google Calendar** for conflicts, creates events, suggests **smart alternatives** when a slot is blocked, and answers open-ended calendar questions — all from a simple terminal chat interface.
+
+Built as a LangChain lab assignment demonstrating multi-step agentic reasoning with real external API integration.
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Project Structure](#project-structure)
+- [Architecture](#architecture)
+- [Setup Guide](#setup-guide)
+- [Running the Agent](#running-the-agent)
+- [Example Interactions](#example-interactions)
+- [Tool Reference](#tool-reference)
+- [Task Coverage](#task-coverage)
+- [Known Issues and Fixes](#known-issues-and-fixes)
+- [License](#license)
+
+---
+
+## Features
+
+- **Natural language scheduling** — say "Book a call tomorrow at 3pm" instead of filling forms
+- **Real Google Calendar integration** — events actually appear in your calendar
+- **Past-date guard** — rejects requests for times that have already passed
+- **Conflict detection** — checks for overlapping events before creating anything
+- **Smart alternative suggestions** — when a slot is taken, analyses your booking patterns and suggests 2-3 ranked alternatives with reasons
+- **Calendar intelligence** — answers questions like "Which days am I free this week?" or "How many hours of meetings do I have?"
+- **Attendee invites** — optionally invite someone by email when creating an event
+- **Date-aware LLM** — today's date is injected into every prompt so "tomorrow", "this Friday" etc. always resolve correctly
 
 ---
 
 ## Project Structure
 
 ```
-meeting_scheduler/
-├── credentials.json   ← downloaded from Google Cloud Console
-├── token.json         ← auto-generated on first run (do NOT commit)
-├── .env               ← API keys
-├── tools.py           ← all LangChain tool definitions
-├── agent.py           ← multi-step agentic loop
-├── main.py            ← entry point / chat loop
-└── README.md
+25CS60R45/
+├── tools.py           <- All LangChain @tool definitions (5 tools)
+├── agent.py           <- Multi-step agentic loop + dynamic system prompt
+├── main.py            <- Entry point / interactive chat loop
+├── requirements.txt   <- Python dependencies
+├── .gitignore         <- Excludes secrets from Git
+├── LICENSE            <- MIT License
+├── README.md          <- This file
+│
+├── .env               <- YOUR GEMINI API KEY  (never commit — in .gitignore)
+├── credentials.json   <- FROM GOOGLE CLOUD    (never commit — in .gitignore)
+└── token.json         <- AUTO-GENERATED       (never commit — in .gitignore)
 ```
 
 ---
 
-## Step-by-Step Setup
+## Architecture
 
-### 1 — Clone / copy the project files
+```
+User Input (natural language)
+        |
+        v
+  build_system_prompt()
+  [injects today's date, tomorrow's date, current IST time]
+        |
+        v
+  Gemini 1.5 Flash LLM
+  [bound with 5 tools via bind_tools()]
+        |
+        v
+  response.tool_calls populated?
+    |
+    |-- YES --> execute tool(s)
+    |           append ToolMessage to history
+    |           loop back to LLM  (up to 8 iterations)
+    |
+    |-- NO  --> return final text answer to user
+```
 
-Place all four Python files (`tools.py`, `agent.py`, `main.py`) and this
-`README.md` in a folder named `meeting_scheduler/`.
+The agent runs in a **multi-step agentic loop**. Each tool result is appended
+to the conversation as a `ToolMessage` so the LLM has full context before
+deciding its next action. This enables complex multi-step reasoning such as:
+check calendar → detect conflict → analyse patterns → find free slots → suggest alternatives.
 
-### 2 — Create a Python virtual environment
+---
+
+## Setup Guide
+
+### Step 1 — Clone the repository
+
+```bash
+git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
+cd YOUR_REPO_NAME
+```
+
+### Step 2 — Create a Python virtual environment
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 ```
 
-### 3 — Install dependencies
+### Step 3 — Install dependencies
 
 ```bash
-pip install \
-  langchain \
-  langchain-google-genai \
-  google-auth \
-  google-auth-oauthlib \
-  google-api-python-client \
-  python-dotenv
+pip install -r requirements.txt
 ```
 
-### 4 — Get a Gemini API key
+Or install manually:
 
-1. Visit <https://aistudio.google.com/app/apikey>
-2. Click **Create API Key**
+```bash
+pip install langchain langchain-google-genai google-auth \
+            google-auth-oauthlib google-api-python-client python-dotenv
+```
+
+### Step 4 — Get a Gemini API Key
+
+1. Visit https://aistudio.google.com/app/apikey
+2. Click **Create API Key** and copy it
 3. Create a `.env` file in the project root:
 
 ```
-GOOGLE_API_KEY=your_key_here
+GOOGLE_API_KEY=your_gemini_api_key_here
 ```
 
-### 5 — Enable Google Calendar API & create OAuth credentials
+> **Free tier limits:**
+> - `gemini-2.5-flash` — 20 requests/day (too low for testing)
+> - `gemini-1.5-flash` — 1500 requests/day (recommended)
+>
+> To switch models, change one line in `agent.py`:
+> ```python
+> llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
+> ```
 
-1. Go to <https://console.cloud.google.com>
+### Step 5 — Enable Google Calendar API
+
+1. Go to https://console.cloud.google.com
 2. Create a new project (or select an existing one)
-3. **APIs & Services → Library** → search **Google Calendar API** → Enable
-4. **APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID**
-   - Application type: **Desktop App**
-   - Click **Create**, then **Download JSON**
-5. Rename the downloaded file to `credentials.json` and place it in the project root
+3. Navigate to **APIs & Services → Library**
+4. Search for **Google Calendar API** and click **Enable**
 
-### 6 — Add yourself as a test user (IMPORTANT)
+> Skipping this step causes a `403 accessNotConfigured` error on first run.
+> You can also enable it directly at:
+> https://console.developers.google.com/apis/api/calendar-json.googleapis.com/overview
 
-Because the app is in development mode, only whitelisted accounts can log in.
+### Step 6 — Create OAuth 2.0 Credentials
 
-1. **APIs & Services → OAuth consent screen**
-2. Scroll to **Test users → Add Users**
-3. Enter your Gmail address → Save
+1. Go to **APIs & Services → Credentials**
+2. Click **Create Credentials → OAuth 2.0 Client ID**
+3. Set **Application type** to **Desktop App**, give it any name, click **Create**
+4. Click the **Download JSON** (⬇) icon next to your new credential
+5. Rename the downloaded file to exactly `credentials.json`
+6. Place it in the project root (same folder as `main.py`)
 
-### 7 — First-run authentication (copy-paste flow)
+### Step 7 — Add Yourself as a Test User
 
-The first time you run the app it will:
+Because the app is in development/testing mode, Google only allows whitelisted Gmail accounts to authenticate. Without this step you will get an "Access blocked" error.
 
-1. Print an authorisation URL in the terminal
-2. You open that URL in any browser
-3. Log in with the Gmail address you whitelisted
-4. Google shows you an authorisation code — copy it
-5. Paste it back into the terminal prompt
-6. `token.json` is created automatically; future runs skip this step
+1. Go to **APIs & Services → OAuth consent screen**
+2. Scroll to the **Test users** section
+3. Click **Add Users**, enter your Gmail address, click **Save**
+
+> If you still see the "App not verified" warning after adding yourself,
+> click **Advanced → Go to [app name] (unsafe)** to proceed.
+> This is completely safe for your own personal development app.
+
+### Step 8 — First-Run Authentication (one-time only)
+
+Because the app runs in a terminal with no browser redirect, authentication uses a manual copy-paste code flow:
+
+1. Run `python3 main.py`
+2. A long Google OAuth URL is printed in the terminal
+3. Open that URL in any browser
+4. Log in with the Gmail address you whitelisted in Step 7
+5. Click **Allow** to grant Calendar permissions
+6. Google displays an authorization code — copy the entire code
+7. Paste it back into the terminal where it says `-> Paste the authorization code here:`
+8. Press Enter — `token.json` is created automatically
+9. All future runs skip this step entirely
 
 ---
 
 ## Running the Agent
 
 ```bash
-python main.py
+python3 main.py
 ```
 
-You will see a confirmation that the agent connected to your calendar, then an
-interactive prompt:
+Successful startup looks like:
 
 ```
+╔══════════════════════════════════════════════════════╗
+║        AI Meeting Scheduler  (Gemini + LangChain)   ║
+║  Type 'help' for example prompts  |  'exit' to quit ║
+╚══════════════════════════════════════════════════════╝
+
+Authenticating with Google Calendar...
 ✓ Connected to calendar: your.email@gmail.com
 
-You: Schedule a 1-hour meeting called Team Sync tomorrow at 10am
+You:
 ```
 
 Type `help` to see example prompts. Type `exit` to quit.
@@ -109,35 +210,117 @@ Type `help` to see example prompts. Type `exit` to quit.
 
 ## Example Interactions
 
-| Input | Expected behaviour |
-|---|---|
-| `Schedule a 1-hour meeting called Team Sync tomorrow at 10am` | Event created, link returned |
-| `Book a 30-minute standup at 9am this Friday` | Event created at the correct time |
-| `Set up a 45-min call with raj@example.com on Monday at 3pm` | Event created with attendee invited |
-| `Schedule a meeting at 2pm yesterday` | Rejected: past date |
-| `Book a call on Friday at 2pm` (slot already taken) | Conflict detected + 2-3 alternatives suggested |
-| `Which days am I free this week?` | Lists days with no meetings |
-| `How many hours of meetings do I have this week?` | Returns total meeting hours |
-| `What was my busiest day this month?` | Returns the day with most events |
+### Task 2 — Basic Scheduling
+
+```
+You: Schedule a 1-hour meeting called Team Sync tomorrow at 10am
+Assistant: Event "Team Sync" created on 2026-04-09 at 10:00.
+           Link: https://calendar.google.com/event?eid=...
+
+You: Book a 30-minute standup at 9am this Friday
+Assistant: Event "standup" created on 2026-04-11 at 09:00.
+           Link: https://calendar.google.com/event?eid=...
+
+You: Set up a 45-min call with raj@example.com on Monday at 3pm
+Assistant: Event created and raj@example.com has been invited.
+           Link: https://calendar.google.com/event?eid=...
+```
+
+### Task 3 — Conflict Detection
+
+```
+You: Schedule a meeting called Old Meeting on 2024-01-15 at 10am
+Assistant: The requested time (2024-01-15 10:00) is in the past.
+           Please provide a future date and time.
+
+You: Book a 30-minute Design Review tomorrow at 2:30pm
+     [when "Team Sync" already occupies 2:00-3:00pm]
+Assistant: Conflict detected. The slot 14:30-15:00 overlaps with
+           "Team Sync" (14:00-15:00). Please choose a different time.
+```
+
+### Task 4 — Smart Suggestions
+
+```
+You: Schedule a 1-hour Strategy Call tomorrow at 10am
+     [when that slot is already blocked]
+
+[Agent] Calling tool 'create_event'       <- detects conflict
+[Agent] Calling tool 'analyse_booking_patterns'
+[Agent] Calling tool 'find_free_slots'    <- on requested day
+[Agent] Calling tool 'find_free_slots'    <- on lightest day
+Assistant: That slot is taken. Here are 3 alternatives for you:
+
+  1. Tomorrow at 14:00 — free 2-hour gap in the afternoon
+  2. Wednesday at 09:00 — Wednesday is your lightest day historically
+  3. Thursday at 11:00 — consistent free window in your past patterns
+
+### Bonus — Calendar Insights
+
+```
+You: Which days am I free this week?
+Assistant: Days with no meetings:
+  - Monday, 2026-04-13
+  - Thursday, 2026-04-16
+
+You: How many hours of meetings do I have this week?
+Assistant: You have 3h 45m of meetings this week.
+
+You: What was my busiest day this month?
+Assistant: Your busiest day was Wednesday, 2026-04-08 with 4 meetings.
+```
 
 ---
 
-## Feature Overview by Task
+## Tool Reference
 
-| Task | What is implemented |
-|---|---|
-| **Task 1 – Setup** | OAuth flow, `token.json` caching, Calendar ID verification |
-| **Task 2 – Trivial Creation** | `create_event` tool, single LLM → tool call → confirmation |
-| **Task 3 – Conflict Detection** | Past-date guard, overlap check `(A_start < B_end AND A_end > B_start)`, multi-step agent loop with `ToolMessage` history |
-| **Task 4 – Smart Suggestions** | `analyse_booking_patterns`, `find_free_slots`, ranked alternatives with reasons in the system prompt workflow |
-| **Bonus – Calendar Insights** | `query_calendar_insights` handles free days, busiest day, total meeting hours, and general event listing |
+| Tool | Task | Description |
+|------|------|-------------|
+| `create_event` | 2, 3 | Creates a Google Calendar event. Includes past-date guard and overlap check before calling the API. |
+| `get_calendar_events` | 3 | Fetches all events on a given date. Used by the agent to check for conflicts before scheduling. |
+| `find_free_slots` | 4 | Scans working hours (09:00-18:00) and returns every gap large enough for the requested meeting. |
+| `analyse_booking_patterns` | 4 | Looks at the last 30 days to find busiest days, lightest days, preferred hours, and average meeting duration. |
+| `query_calendar_insights` | Bonus | Answers open-ended questions — free days, total hours, busiest day, event listings. |
 
 ---
 
-## Notes
+## Task Coverage
 
-- All times are handled in **Asia/Kolkata (IST, UTC+5:30)**. Change `TIMEZONE`
-  in `tools.py` if you are in a different zone.
-- The agent loop runs up to **8 iterations** per request (configurable via
-  `MAX_ITERATIONS` in `agent.py`).
-- `token.json` is sensitive — add it to `.gitignore`.
+| Task | Marks | What is Implemented |
+|------|-------|---------------------|
+| **Task 1 - Setup** | 10 | OAuth 2.0 copy-paste flow, token.json caching, Calendar ID verified on startup |
+| **Task 2 - Trivial Creation** | 30 | create_event tool, LLM extracts structured args, event appears in Google Calendar, confirmation link returned |
+| **Task 3 - Conflict Detection** | 25 | Past-date guard, overlap check using A_start < B_end AND A_end > B_start, multi-step agent loop with full ToolMessage history |
+| **Task 4 - Smart Suggestions** | 35 | analyse_booking_patterns + find_free_slots called automatically on conflict, 2-3 ranked alternatives with reasons |
+| **Bonus - Calendar Insights** | 20 | query_calendar_insights handles free days, total hours, busiest day, general event listing |
+
+---
+
+## Known Issues and Fixes
+
+**Access blocked: App has not completed Google verification**
+Your Gmail was not added as a test user. Go to APIs & Services -> OAuth consent screen -> Test users -> Add Users.
+
+**Google Calendar API has not been used in this project (403)**
+Enable the API at: https://console.developers.google.com/apis/api/calendar-json.googleapis.com/overview
+
+**Your API key was reported as leaked**
+Your Gemini key was exposed publicly. Generate a new key at https://aistudio.google.com/app/apikey and update .env.
+
+**Quota exceeded / 429 error**
+You hit the free tier limit (20 req/day for gemini-2.5-flash). Switch to `gemini-1.5-flash` in agent.py (1500 req/day free).
+
+**Tomorrow resolves to a past date**
+Ensure agent.py uses build_system_prompt() (not a static SYSTEM_PROMPT string) so today's real date is injected at runtime.
+
+**Author identity unknown (git error)**
+```bash
+git config --global user.email "you@example.com"
+git config --global user.name "Your Name"
+```
+
+---
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
